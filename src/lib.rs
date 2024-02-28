@@ -3,6 +3,9 @@
 
 pub mod consts;
 
+#[cfg(test)]
+mod tests;
+
 pub struct IZeros;
 pub struct IOnes;
 pub struct B0;
@@ -24,6 +27,7 @@ pub trait Ordering: Seal {
     type Then<O: Ordering>: Ordering;
     type Reverse: Ordering<Reverse = Self>;
     type PickInt<L: Integer, E: Integer, G: Integer>: Integer;
+    type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned>: Unsigned;
 }
 
 pub struct OrdLess;
@@ -35,18 +39,21 @@ impl Ordering for OrdLess {
     type Then<O: Ordering> = Self;
     type Reverse = OrdGreater;
     type PickInt<L: Integer, E: Integer, G: Integer> = L;
+    type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned> = L;
 }
 impl Seal for OrdEq {}
 impl Ordering for OrdEq {
     type Then<O: Ordering> = O;
     type Reverse = Self;
     type PickInt<L: Integer, E: Integer, G: Integer> = E;
+    type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned> = E;
 }
 impl Seal for OrdGreater {}
 impl Ordering for OrdGreater {
     type Then<O: Ordering> = Self;
     type Reverse = OrdLess;
     type PickInt<L: Integer, E: Integer, G: Integer> = G;
+    type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned> = G;
 }
 
 pub trait Bit: Seal {
@@ -420,7 +427,7 @@ impl<M: IsZero> IsPowerOfTwo for Int<M, B1> {
 
 pub trait Div<D: NonZero> {
     type Quot: Integer;
-    type Rem: Integer;
+    type Rem: Unsigned;
 }
 
 pub type Quot<N, D> = <N as Div<D>>::Quot;
@@ -429,10 +436,12 @@ pub type Rem<N, D> = <N as Div<D>>::Rem;
 impl<N: Integer, D: NonZero> Div<D> for N
 where
     // CmpZero<Prod<Signum<N>, Signum<D>>>:,
-    (): div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>,
+    (): div_private::DivStart<Abs<N>, Abs<D>, Signum<N>, Prod<Signum<N>, Signum<D>>>,
 {
-    type Quot = <() as div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>>::Quot;
-    type Rem = <() as div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>>::Rem;
+    type Quot =
+        <() as div_private::DivStart<Abs<N>, Abs<D>, Signum<N>, Prod<Signum<N>, Signum<D>>>>::Quot;
+    type Rem =
+        <() as div_private::DivStart<Abs<N>, Abs<D>, Signum<N>, Prod<Signum<N>, Signum<D>>>>::Rem;
 }
 
 mod div_private {
@@ -450,36 +459,36 @@ mod div_private {
     //     R -= D
     //     Q[i] = 1
 
-    pub trait DivStart<N: Integer, D: NonZero, Sign: Integer> {
+    pub trait DivStart<N, D, NSign, Sign> {
         type Quot: Integer;
-        type Rem: Integer;
+        type Rem: Unsigned;
     }
 
     pub trait DivStartLoop<N, D, I> {
         type Quot: Integer;
-        type Rem: Integer;
+        type Rem: Unsigned;
     }
 
     pub trait DivLoop<N, D, Q, R, I> {
         type Quot: Integer;
-        type Rem: Integer;
+        type Rem: Unsigned;
     }
     pub trait DivLoopCmp<N, D, Q, R, I> {
         type Quot: Integer;
-        type Rem: Integer;
+        type Rem: Unsigned;
     }
     pub trait DivLoopIf<N, D, Q, R, I, Cmp> {
         type Quot: Integer;
-        type Rem: Integer;
+        type Rem: Unsigned;
     }
 
     // Zero / D == Zero
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, IZeros> for T {
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, IZeros, IZeros> for T {
         type Quot = IZeros;
         type Rem = IZeros;
     }
 
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::P1> for T
+    impl<T, N: Integer, D: NonZero, NSign> DivStart<N, D, NSign, consts::P1> for T
     where
         // NBits = len(N)
         T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
@@ -488,13 +497,24 @@ mod div_private {
         type Rem = T::Rem;
     }
 
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::N1> for T
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::P1, consts::N1> for T
     where
         // NBits = len(N)
         T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
+        Diff<D, T::Rem>: Unsigned,
+    {
+        type Quot = Neg<T::Quot>;
+        type Rem = T::Rem;
+    }
+
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::N1, consts::N1> for T
+    where
+        // NBits = len(N)
+        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
+        Diff<D, T::Rem>: Unsigned,
     {
         type Quot = <CmpZero<T::Rem> as Ordering>::PickInt<consts::Z0, Neg<T::Quot>, Not<T::Quot>>;
-        type Rem = <CmpZero<T::Rem> as Ordering>::PickInt<consts::Z0, T::Rem, Diff<D, T::Rem>>;
+        type Rem = <CmpZero<T::Rem> as Ordering>::PickUInt<consts::Z0, T::Rem, Diff<D, T::Rem>>;
     }
 
     impl<T, N: Integer, D, I: Peano> DivStartLoop<N, D, PS<I>> for T
@@ -547,12 +567,15 @@ mod div_private {
 
     //     R -= D
     //     Q[i] = 1
-    impl<T, N, D: Integer, Q: Integer, R: Integer, O: cmp::OrdGe> DivLoopIf<N, D, Q, R, PZ, O> for T {
+    impl<T, N, D: Integer, Q: Integer, R: Integer, O: cmp::OrdGe> DivLoopIf<N, D, Q, R, PZ, O> for T
+    where
+        Diff<R, D>: Unsigned,
+    {
         type Quot = BitSetP<Q, PZ, B1>;
         type Rem = Diff<R, D>;
     }
 
-    impl<T, N, D, Q: Integer, R: Integer> DivLoopIf<N, D, Q, R, PZ, OrdLess> for T {
+    impl<T, N, D, Q: Integer, R: Unsigned> DivLoopIf<N, D, Q, R, PZ, OrdLess> for T {
         type Quot = Q;
         type Rem = R;
     }
