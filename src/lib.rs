@@ -370,7 +370,8 @@ impl<T: Integer<CompareZero = OrdLess>> Negative for T {}
 impl<T: Integer<CompareZero = OrdGreater> + Unsigned> Positive for T {}
 impl<T: Integer<CompareZero = OrdEq> + Unsigned> IsZero for T {}
 
-type Cmp<A, B> = <Diff<A, B> as Integer>::CompareZero;
+type Cmp<A, B> = CmpZero<Diff<A, B>>;
+type CmpZero<A> = <A as Integer>::CompareZero;
 
 pub mod cmp {
     use super::{Diff, Integer, Positive};
@@ -427,6 +428,7 @@ pub type Rem<N, D> = <N as Div<D>>::Rem;
 
 impl<N: Integer, D: NonZero> Div<D> for N
 where
+    // CmpZero<Prod<Signum<N>, Signum<D>>>:,
     (): div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>,
 {
     type Quot = <() as div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>>::Quot;
@@ -456,10 +458,6 @@ mod div_private {
     pub trait DivStartLoop<N, D, I> {
         type Quot: Integer;
         type Rem: Integer;
-    }
-    pub trait DivNeg<D, Q, R> {
-        type QuotNeg: Integer;
-        type RemNeg: Integer;
     }
 
     pub trait DivLoop<N, D, Q, R, I> {
@@ -494,21 +492,9 @@ mod div_private {
     where
         // NBits = len(N)
         T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
-        T: DivNeg<D, T::Quot, T::Rem>,
     {
-        type Quot = T::QuotNeg;
-        type Rem = T::RemNeg;
-    }
-
-    impl<T, D, Q: Integer> DivNeg<D, Q, consts::Z0> for T {
-        type QuotNeg = Neg<Q>;
-        type RemNeg = consts::Z0;
-    }
-
-    impl<T, D: Integer, Q: Integer, R: NonZero> DivNeg<D, Q, R> for T {
-        // (-a - 1) == !a for binary numbers
-        type QuotNeg = Not<Q>;
-        type RemNeg = Diff<D, R>;
+        type Quot = <CmpZero<T::Rem> as Ordering>::PickInt<consts::Z0, Neg<T::Quot>, Not<T::Quot>>;
+        type Rem = <CmpZero<T::Rem> as Ordering>::PickInt<consts::Z0, T::Rem, Diff<D, T::Rem>>;
     }
 
     impl<T, N: Integer, D, I: Peano> DivStartLoop<N, D, PS<I>> for T
