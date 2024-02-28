@@ -54,7 +54,7 @@ pub trait Bit: Seal {
     // If then else, if the bit is true then T is returned else F is returned
     type Ite<T: Bit, F: Bit>: Bit;
     type PickInt<T: Integer, F: Integer>: Integer;
-    type PushOntoInt<I: Integer>: Integer<LeastSig = Self, MostSig = I>;
+    type PushOntoInt<I: Integer>: Integer<LeastSig = Self, MostSig = I, BitGet<PZ> = Self>;
     type MaybeInc<A: Integer>: Integer;
     type MaybeDec<A: Integer>: Integer;
     type Mul<A: Integer>: Integer;
@@ -104,16 +104,19 @@ pub type BitNor<A: Bit, B: Bit> = BitNot<BitOr<A, B>>;
 pub type BitNxor<A: Bit, B: Bit> = BitNot<BitXor<A, B>>;
 pub type BitProd<A: Bit, B: Integer> = <A as Bit>::Mul<B>;
 
-pub trait Peano: Seal {
+pub trait Peano: Seal + Sized {
     type Add<B: Peano>: Peano;
     type Mul<B: Peano>: Peano;
     type Div2: Peano;
     type IncDiv2: Peano;
     type Mod2: Bit;
     type AsUnsigned: Unsigned;
+    type CmpZero: Ordering;
 
     type Shl<A: Integer, Fill: Bit>: Integer;
     type Shr<A: Integer>: Integer;
+    type BitGet<MostSig: Integer, LeastSig: Bit>: Bit;
+    type BitSet<MostSig: Integer, LeastSig: Bit, B: Bit>: Integer;
 }
 impl Seal for PZ {}
 impl Peano for PZ {
@@ -123,9 +126,12 @@ impl Peano for PZ {
     type IncDiv2 = PZ;
     type Mod2 = B0;
     type AsUnsigned = IZeros;
+    type CmpZero = OrdEq;
 
     type Shl<A: Integer, Fill: Bit> = A;
     type Shr<A: Integer> = A;
+    type BitGet<MostSig: Integer, LeastSig: Bit> = LeastSig;
+    type BitSet<MostSig: Integer, LeastSig: Bit, B: Bit> = PushBit<MostSig, B>;
 }
 impl<P: Peano> Seal for PS<P> {}
 impl<P: Peano> Peano for PS<P> {
@@ -135,17 +141,21 @@ impl<P: Peano> Peano for PS<P> {
     type IncDiv2 = PS<P::Div2>;
     type Mod2 = BitNot<P::Mod2>;
     type AsUnsigned = Int<<Self::Div2 as Peano>::AsUnsigned, Self::Mod2>;
+    type CmpZero = OrdGreater;
 
     type Shl<A: Integer, Fill: Bit> = PushBit<P::Shl<A, Fill>, Fill>;
     type Shr<A: Integer> = P::Shr<A::ShrOne>;
+    type BitGet<MostSig: Integer, LeastSig: Bit> = MostSig::BitGet<P>;
+    type BitSet<MostSig: Integer, LeastSig: Bit, B: Bit> = PushBit<MostSig::BitSet<P, B>, LeastSig>;
 }
 
 pub trait Integer: Seal {
     const NEW: Self;
     type LeastSig: Bit;
     type MostSig: Integer;
-    type PushLeastZero: Integer<LeastSig = B0, MostSig = Self>;
-    type PushLeastOne: Integer<LeastSig = B1, MostSig = Self>;
+    type PushLeastZero: Integer<LeastSig = B0, MostSig = Self, BitGet<PZ> = B0>;
+    type PushLeastOne: Integer<LeastSig = B1, MostSig = Self, BitGet<PZ> = B1>;
+    type Length: Peano;
 
     type Inc: Integer<LeastSig = BitNot<Self::LeastSig>>;
     type Dec: Integer<LeastSig = BitNot<Self::LeastSig>>;
@@ -185,6 +195,9 @@ pub trait Integer: Seal {
     >;
     type ShrOne: Integer<LeastSig = <Self::MostSig as Integer>::LeastSig>;
 
+    type BitGet<P: Peano>: Bit;
+    type BitSet<P: Peano, B: Bit>: Integer;
+
     type CompareZero: Ordering;
 }
 
@@ -196,6 +209,7 @@ impl Integer for IZeros {
 
     type PushLeastZero = IZeros;
     type PushLeastOne = Int<IZeros, B1>;
+    type Length = PZ;
 
     type Inc = Int<Self, B1>;
     type Dec = IOnes;
@@ -213,6 +227,8 @@ impl Integer for IZeros {
     type Nxor<B: Integer> = B::Not;
     type Not = IOnes;
     type ShrOne = IZeros;
+    type BitGet<P: Peano> = B0;
+    type BitSet<P: Peano, B: Bit> = P::BitSet<Self, B0, B>;
 
     type CompareZero = OrdEq;
 }
@@ -225,6 +241,7 @@ impl Integer for IOnes {
 
     type PushLeastZero = Int<IOnes, B0>;
     type PushLeastOne = IOnes;
+    type Length = PZ;
 
     type Inc = IZeros;
     type Dec = Int<Self, B0>;
@@ -242,6 +259,8 @@ impl Integer for IOnes {
     type Nxor<B: Integer> = B;
     type Not = IZeros;
     type ShrOne = IOnes;
+    type BitGet<P: Peano> = B1;
+    type BitSet<P: Peano, B: Bit> = P::BitSet<Self, B1, B>;
 
     type CompareZero = OrdLess;
 }
@@ -257,6 +276,7 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
 
     type PushLeastZero = Int<Self, B0>;
     type PushLeastOne = Int<Self, B1>;
+    type Length = PS<M::Length>;
 
     type Inc = PushBit<L::PickInt<M::Inc, M>, BitNot<L>>;
     type Dec = PushBit<L::PickInt<M, M::Dec>, BitNot<L>>;
@@ -288,6 +308,8 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
     type Nxor<B: Integer> = PushBit<Nxor<M, B::MostSig>, BitNxor<L, B::LeastSig>>;
     type Not = Int<M::Not, BitNot<L>>;
     type ShrOne = M;
+    type BitGet<P: Peano> = P::BitGet<M, L>;
+    type BitSet<P: Peano, B: Bit> = P::BitSet<M, L, B>;
 
     type CompareZero = <M::CompareZero as Ordering>::Then<L::CompareZero>;
 }
@@ -308,13 +330,23 @@ pub type Nxor<A: Integer, B: Integer> = <A as Integer>::Nxor<B>;
 pub type Not<A: Integer> = <A as Integer>::Not;
 pub type Shl<A: Integer, B: Unsigned> = <<B as Unsigned>::AsPeano as Peano>::Shl<A, B0>;
 pub type Shr<A: Integer, B: Unsigned> = <<B as Unsigned>::AsPeano as Peano>::Shr<A>;
+pub type BitGet<A: Integer, B: Unsigned> = <A as Integer>::BitGet<<B as Unsigned>::AsPeano>;
+pub type BitGetP<A: Integer, B: Peano> = <A as Integer>::BitGet<B>;
+pub type BitSet<A: Integer, B: Unsigned, C: Bit> =
+    <A as Integer>::BitSet<<B as Unsigned>::AsPeano, C>;
+pub type BitSetP<A: Integer, B: Peano, C: Bit> = <A as Integer>::BitSet<B, C>;
+pub type Signum<A: Integer> =
+    <<A as Integer>::CompareZero as Ordering>::PickInt<IOnes, IZeros, consts::P1>;
 
 pub type Sum<A: Integer, B: Integer> = <A as Integer>::Add<B>;
 pub type Diff<A: Integer, B: Integer> = <A as Integer>::Add<B::Neg>;
+pub type Inc<A: Integer> = <A as Integer>::Inc;
+pub type Dec<A: Integer> = <A as Integer>::Dec;
 pub type Prod<A: Integer, B: Integer> = <A as Integer>::Mul<B>;
 pub type Sq<A: Integer> = <A as Integer>::Mul<A>;
 pub type Neg<A: Integer> = <A as Integer>::Neg;
 pub type Abs<A: Integer> = <A as Integer>::Abs;
+pub type Length<A: Integer> = <A as Integer>::Length;
 
 pub trait Unsigned: Integer {
     type AsPeano: Peano;
@@ -338,9 +370,11 @@ impl<T: Integer<CompareZero = OrdLess>> Negative for T {}
 impl<T: Integer<CompareZero = OrdGreater> + Unsigned> Positive for T {}
 impl<T: Integer<CompareZero = OrdEq> + Unsigned> IsZero for T {}
 
+type Cmp<A, B> = <Diff<A, B> as Integer>::CompareZero;
+
 pub mod cmp {
     use super::{Diff, Integer, Positive};
-    use crate::{IsZero, Negative, OrdGreater, OrdLess, Ordering, Unsigned};
+    use crate::{IsZero, Negative, OrdEq, OrdGreater, OrdLess, Ordering, Unsigned};
 
     pub trait Gt<B: Integer>: Integer {}
     impl<A: Integer, B: Integer> Gt<B> for A where Diff<A, B>: Positive {}
@@ -354,11 +388,20 @@ pub mod cmp {
     pub trait Le<B: Integer>: Integer {}
     impl<A: Integer, B: Integer> Le<B> for A where Diff<B, A>: Unsigned {}
     pub trait Ne<B: Integer>: Integer {}
-    impl<A: Integer, B: Integer> Ne<B> for A where <Diff<A, B> as Integer>::CompareZero: NotEqual {}
+    impl<A: Integer, B: Integer> Ne<B> for A where <Diff<A, B> as Integer>::CompareZero: OrdNe {}
 
-    pub trait NotEqual: Ordering {}
-    impl NotEqual for OrdLess {}
-    impl NotEqual for OrdGreater {}
+    pub trait OrdLe: Ordering {}
+    pub trait OrdGe: Ordering {}
+    pub trait OrdNe: Ordering {}
+
+    impl OrdGe for OrdGreater {}
+    impl OrdNe for OrdGreater {}
+
+    impl OrdGe for OrdEq {}
+    impl OrdLe for OrdEq {}
+
+    impl OrdLe for OrdLess {}
+    impl OrdNe for OrdLess {}
 }
 
 pub trait IsPowerOfTwo: Unsigned {
@@ -372,4 +415,159 @@ impl<M: IsPowerOfTwo> IsPowerOfTwo for Int<M, B0> {
 impl<M: IsZero> IsPowerOfTwo for Int<M, B1> {
     type TrailingZeros = PZ;
     type Mask = IZeros;
+}
+
+pub trait Div<D: NonZero> {
+    type Quot: Integer;
+    type Rem: Integer;
+}
+
+pub type Quot<N, D> = <N as Div<D>>::Quot;
+pub type Rem<N, D> = <N as Div<D>>::Rem;
+
+impl<N: Integer, D: NonZero> Div<D> for N
+where
+    (): div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>,
+{
+    type Quot = <() as div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>>::Quot;
+    type Rem = <() as div_private::DivStart<N, D, Prod<Signum<N>, Signum<D>>>>::Rem;
+}
+
+mod div_private {
+    use super::*;
+
+    // Division algorithm:
+    // We have N / D:
+    // let Q = 0, R = 0
+    // NBits = len(N)
+    // for I in NBits-1..0:
+    //   R <<=1
+    //   R[0] = N[i]
+    //   let C = R.cmp(D)
+    //   if C == Equal or Greater:
+    //     R -= D
+    //     Q[i] = 1
+
+    pub trait DivStart<N: Integer, D: NonZero, Sign: Integer> {
+        type Quot: Integer;
+        type Rem: Integer;
+    }
+
+    pub trait DivStartLoop<N, D, I> {
+        type Quot: Integer;
+        type Rem: Integer;
+    }
+    pub trait DivNeg<D, Q, R> {
+        type QuotNeg: Integer;
+        type RemNeg: Integer;
+    }
+
+    pub trait DivLoop<N, D, Q, R, I> {
+        type Quot: Integer;
+        type Rem: Integer;
+    }
+    pub trait DivLoopCmp<N, D, Q, R, I> {
+        type Quot: Integer;
+        type Rem: Integer;
+    }
+    pub trait DivLoopIf<N, D, Q, R, I, Cmp> {
+        type Quot: Integer;
+        type Rem: Integer;
+    }
+
+    // Zero / D == Zero
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, IZeros> for T {
+        type Quot = IZeros;
+        type Rem = IZeros;
+    }
+
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::P1> for T
+    where
+        // NBits = len(N)
+        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
+    {
+        type Quot = T::Quot;
+        type Rem = T::Rem;
+    }
+
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::N1> for T
+    where
+        // NBits = len(N)
+        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
+        T: DivNeg<D, T::Quot, T::Rem>,
+    {
+        type Quot = T::QuotNeg;
+        type Rem = T::RemNeg;
+    }
+
+    impl<T, D, Q: Integer> DivNeg<D, Q, consts::Z0> for T {
+        type QuotNeg = Neg<Q>;
+        type RemNeg = consts::Z0;
+    }
+
+    impl<T, D: Integer, Q: Integer, R: NonZero> DivNeg<D, Q, R> for T {
+        // (-a - 1) == !a for binary numbers
+        type QuotNeg = Not<Q>;
+        type RemNeg = Diff<D, R>;
+    }
+
+    impl<T, N: Integer, D, I: Peano> DivStartLoop<N, D, PS<I>> for T
+    where
+        // let Q = 0, R = 0
+        // for I in NBits-1..0:
+        T: DivLoop<N, D, consts::Z0, consts::Z0, I>,
+    {
+        type Quot = T::Quot;
+        type Rem = T::Rem;
+    }
+
+    impl<T, N: Integer, D, Q, R: Integer, I: Peano> DivLoop<N, D, Q, R, I> for T
+    where
+        //   R <<=1
+        //   R[0] = N[i]
+        T: DivLoopCmp<N, D, Q, BitSet<Shl<R, consts::P1>, consts::Z0, BitGetP<N, I>>, I>,
+    {
+        type Quot = T::Quot;
+        type Rem = T::Rem;
+    }
+
+    impl<T, N, D: Integer, Q, R: Integer, I> DivLoopCmp<N, D, Q, R, I> for T
+    where
+        //   let C = R.cmp(D)
+        T: DivLoopIf<N, D, Q, R, I, Cmp<R, D>>,
+    {
+        type Quot = T::Quot;
+        type Rem = T::Rem;
+    }
+
+    impl<T, N, D: Integer, Q: Integer, R: Integer, I: Peano, O: cmp::OrdGe>
+        DivLoopIf<N, D, Q, R, PS<I>, O> for T
+    where
+        //     R -= D
+        //     Q[i] = 1
+        T: DivLoop<N, D, BitSetP<Q, PS<I>, B1>, Diff<R, D>, I>,
+    {
+        type Quot = T::Quot;
+        type Rem = T::Rem;
+    }
+
+    impl<T, N, D, Q: Integer, R: Integer, I: Peano> DivLoopIf<N, D, Q, R, PS<I>, OrdLess> for T
+    where
+        T: DivLoop<N, D, Q, R, I>,
+    {
+        type Quot = T::Quot;
+        type Rem = T::Rem;
+    }
+
+    //     R -= D
+    //     Q[i] = 1
+    impl<T, N, D: Integer, Q: Integer, R: Integer, O: cmp::OrdGe> DivLoopIf<N, D, Q, R, PZ, O> for T {
+        type Quot = BitSetP<Q, PZ, B1>;
+        type Rem = Diff<R, D>;
+    }
+
+    impl<T, N, D, Q: Integer, R: Integer> DivLoopIf<N, D, Q, R, PZ, OrdLess> for T {
+        type Quot = Q;
+        type Rem = R;
+    }
 }
