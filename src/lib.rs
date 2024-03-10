@@ -163,6 +163,13 @@ impl<P: Peano> Peano for PS<P> {
 pub trait Signum: Integer {
     type Negate: Signum;
     type MulSignum<N: Signum>: Signum;
+    type DivSignums<N: SignumPairHalf>: SignumPair;
+}
+
+pub trait SignumPairHalf: Signum {}
+pub trait SignumPair: Seal {
+    type Quot<Q: Integer, R: Unsigned>: Integer;
+    type Rem<Q: Integer, R: Unsigned, D: Unsigned>: Unsigned;
 }
 
 pub trait Integer: Seal {
@@ -333,17 +340,42 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
 impl Signum for consts::N1 {
     type Negate = consts::P1;
     type MulSignum<N: Signum> = N::Negate;
+    type DivSignums<N: SignumPairHalf> = (Self, N);
 }
 
 impl Signum for consts::Z0 {
     type Negate = consts::Z0;
     type MulSignum<N: Signum> = consts::Z0;
+    type DivSignums<N: SignumPairHalf> = (consts::Z0, consts::Z0);
 }
 
 impl Signum for consts::P1 {
     type Negate = consts::N1;
     type MulSignum<N: Signum> = N;
+    type DivSignums<N: SignumPairHalf> = (Self, N);
 }
+
+impl Seal for (consts::Z0, consts::Z0) {}
+impl SignumPair for (consts::Z0, consts::Z0) {
+    type Quot<Q: Integer, R: Unsigned> = consts::Z0;
+    type Rem<Q: Integer, R: Unsigned, D: Unsigned> = consts::Z0;
+}
+
+impl<S: SignumPairHalf> Seal for (consts::P1, S) {}
+impl<S: SignumPairHalf> SignumPair for (consts::P1, S) {
+    type Quot<Q: Integer, R: Unsigned> = Prod<Q, S>;
+    type Rem<Q: Integer, R: Unsigned, D: Unsigned> = R;
+}
+
+impl<S: SignumPairHalf> Seal for (consts::N1, S) {}
+impl<S: SignumPairHalf> SignumPair for (consts::N1, S) {
+    type Quot<Q: Integer, R: Unsigned> = consts::Z0;
+    type Rem<Q: Integer, R: Unsigned, D: Unsigned> =
+        <CmpZero<R> as Ordering>::PickUInt<consts::Z0, R, UDiff<D, R>>;
+}
+
+impl SignumPairHalf for consts::P1 {}
+impl SignumPairHalf for consts::N1 {}
 
 // type AtLeastTwoBitsSet<A, B, C> = Or<Or<And<A, B>, And<A, C>>, And<B, C>>;
 // (A & B) | (A & C) | (B & C)
@@ -370,6 +402,10 @@ pub type SignumOf<A: Integer> = <<A as Integer>::CompareZero as Ordering>::ToSig
 
 pub type Sum<A: Integer, B: Integer> = <A as Integer>::Add<B>;
 pub type Diff<A: Integer, B: Integer> = <A as Integer>::Add<B::Neg>;
+
+pub type UDiff<A: Unsigned, B: Unsigned> = <A as Unsigned>::SatSub<B>;
+pub type UDiffCarry<A: Unsigned, B: Unsigned, C: Bit> = <A as Unsigned>::SatSubCarry<B, C>;
+
 pub type Inc<A: Integer> = <A as Integer>::Inc;
 pub type Dec<A: Integer> = <A as Integer>::Dec;
 pub type Prod<A: Integer, B: Integer> = <A as Integer>::Mul<B>;
@@ -382,12 +418,35 @@ pub type ProdSig<A: Signum, B: Signum> = <A as Signum>::MulSignum<B>;
 
 pub trait Unsigned: Integer {
     type AsPeano: Peano;
+    type MostSigU: Unsigned;
+
+    type SatSub<B: Unsigned>: Unsigned;
+    type SatSubCarry<B: Unsigned, C: Bit>: Unsigned;
 }
 impl Unsigned for IZeros {
     type AsPeano = PZ;
+    type MostSigU = Self;
+
+    type SatSub<B: Unsigned> = IZeros;
+    type SatSubCarry<B: Unsigned, C: Bit> = IZeros;
 }
 impl<M: Unsigned, L: Bit> Unsigned for Int<M, L> {
+    type MostSigU = M;
+
     type AsPeano = L::AddPeano<<M::AsPeano as Peano>::Add<M::AsPeano>>;
+
+    // (2 * M + 0) - (2 * Bm + 1) = (2 * (M - Bm - 1)) + 1
+    // (2 * M + 1) - (2 * Bm + 1) = (2 * (M - Bm)) + 0
+    // (2 * M + 0) - (2 * Bm + 0) = (2 * (M - Bm)) + 0
+    // (2 * M + 1) - (2 * Bm + 0) = (2 * (M - Bm)) + 1
+    type SatSub<B: Unsigned> =
+        Int<UDiffCarry<M, B::MostSigU, BitAnd<BitNot<L>, B::LeastSig>>, BitXor<L, B::LeastSig>>;
+    // (2 * M + 0) - (2 * Bm + 1) - 1 = (2 * (M - Bm - 1)) + 0
+    // (2 * M + 1) - (2 * Bm + 1) - 1 = (2 * (M - Bm - 1)) + 1
+    // (2 * M + 0) - (2 * Bm + 0) - 1 = (2 * (M - Bm - 1)) + 1
+    // (2 * M + 1) - (2 * Bm + 0) - 1 = (2 * (M - Bm)) + 0
+    type SatSubCarry<B: Unsigned, C: Bit> =
+        Int<UDiffCarry<M, B::MostSigU, BitOr<BitNot<L>, B::LeastSig>>, BitNxor<L, B::LeastSig>>;
 }
 
 pub trait NonZero: Integer {}
@@ -462,6 +521,7 @@ impl<N: Integer, D: NonZero> Div<D> for N
 where
     // CmpZero<Prod<Signum<N>, Signum<D>>>:,
     (): div_private::DivStart<Abs<N>, Abs<D>, SignumOf<N>, ProdSig<SignumOf<N>, SignumOf<D>>>,
+    (): div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
 {
     type Quot = <() as div_private::DivStart<
         Abs<N>,
