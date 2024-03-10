@@ -23,6 +23,6 @@ const _: () = {
     let _: Quot<N30, N5> = P6;
     let _: Rem<N30, N5> = Z0;
 
-    let _: Quot<N32, N5> = P6;
-    let _: Rem<N32, N5> = P2;
+    let _: Quot<N32, N5> = P7;
+    let _: Rem<N32, N5> = P3;
 };

@@ -521,7 +521,7 @@ mod div_private {
         type Rem = IZeros;
     }
 
-    impl<T, N: Integer, D: NonZero, NSign> DivStart<N, D, NSign, consts::P1> for T
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::P1, consts::P1> for T
     where
         // NBits = len(N)
         T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
@@ -538,6 +538,16 @@ mod div_private {
     {
         type Quot = Neg<T::Quot>;
         type Rem = T::Rem;
+    }
+
+    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::N1, consts::P1> for T
+    where
+        // NBits = len(N)
+        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
+        Diff<D, T::Rem>: Unsigned,
+    {
+        type Quot = <CmpZero<T::Rem> as Ordering>::PickInt<consts::Z0, T::Quot, Inc<T::Quot>>;
+        type Rem = <CmpZero<T::Rem> as Ordering>::PickUInt<consts::Z0, T::Rem, Diff<D, T::Rem>>;
     }
 
     impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::N1, consts::N1> for T
