@@ -28,6 +28,7 @@ pub trait Ordering: Seal {
     type Reverse: Ordering<Reverse = Self>;
     type PickInt<L: Integer, E: Integer, G: Integer>: Integer;
     type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned>: Unsigned;
+    type ToSignum: Signum;
 }
 
 pub struct OrdLess;
@@ -40,6 +41,7 @@ impl Ordering for OrdLess {
     type Reverse = OrdGreater;
     type PickInt<L: Integer, E: Integer, G: Integer> = L;
     type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned> = L;
+    type ToSignum = consts::N1;
 }
 impl Seal for OrdEq {}
 impl Ordering for OrdEq {
@@ -47,6 +49,7 @@ impl Ordering for OrdEq {
     type Reverse = Self;
     type PickInt<L: Integer, E: Integer, G: Integer> = E;
     type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned> = E;
+    type ToSignum = consts::Z0;
 }
 impl Seal for OrdGreater {}
 impl Ordering for OrdGreater {
@@ -54,6 +57,7 @@ impl Ordering for OrdGreater {
     type Reverse = OrdLess;
     type PickInt<L: Integer, E: Integer, G: Integer> = G;
     type PickUInt<L: Unsigned, E: Unsigned, G: Unsigned> = G;
+    type ToSignum = consts::P1;
 }
 
 pub trait Bit: Seal {
@@ -154,6 +158,11 @@ impl<P: Peano> Peano for PS<P> {
     type Shr<A: Integer> = P::Shr<A::ShrOne>;
     type BitGet<MostSig: Integer, LeastSig: Bit> = MostSig::BitGet<P>;
     type BitSet<MostSig: Integer, LeastSig: Bit, B: Bit> = PushBit<MostSig::BitSet<P, B>, LeastSig>;
+}
+
+pub trait Signum: Integer {
+    type Negate: Signum;
+    type MulSignum<N: Signum>: Signum;
 }
 
 pub trait Integer: Seal {
@@ -321,6 +330,21 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
     type CompareZero = <M::CompareZero as Ordering>::Then<L::CompareZero>;
 }
 
+impl Signum for consts::N1 {
+    type Negate = consts::P1;
+    type MulSignum<N: Signum> = N::Negate;
+}
+
+impl Signum for consts::Z0 {
+    type Negate = consts::Z0;
+    type MulSignum<N: Signum> = consts::Z0;
+}
+
+impl Signum for consts::P1 {
+    type Negate = consts::N1;
+    type MulSignum<N: Signum> = N;
+}
+
 // type AtLeastTwoBitsSet<A, B, C> = Or<Or<And<A, B>, And<A, C>>, And<B, C>>;
 // (A & B) | (A & C) | (B & C)
 // A & (B | C) | (B & C)
@@ -342,8 +366,7 @@ pub type BitGetP<A: Integer, B: Peano> = <A as Integer>::BitGet<B>;
 pub type BitSet<A: Integer, B: Unsigned, C: Bit> =
     <A as Integer>::BitSet<<B as Unsigned>::AsPeano, C>;
 pub type BitSetP<A: Integer, B: Peano, C: Bit> = <A as Integer>::BitSet<B, C>;
-pub type Signum<A: Integer> =
-    <<A as Integer>::CompareZero as Ordering>::PickInt<IOnes, IZeros, consts::P1>;
+pub type SignumOf<A: Integer> = <<A as Integer>::CompareZero as Ordering>::ToSignum; // ::PickInt<IOnes, IZeros, consts::P1>;
 
 pub type Sum<A: Integer, B: Integer> = <A as Integer>::Add<B>;
 pub type Diff<A: Integer, B: Integer> = <A as Integer>::Add<B::Neg>;
@@ -354,6 +377,8 @@ pub type Sq<A: Integer> = <A as Integer>::Mul<A>;
 pub type Neg<A: Integer> = <A as Integer>::Neg;
 pub type Abs<A: Integer> = <A as Integer>::Abs;
 pub type Length<A: Integer> = <A as Integer>::Length;
+
+pub type ProdSig<A: Signum, B: Signum> = <A as Signum>::MulSignum<B>;
 
 pub trait Unsigned: Integer {
     type AsPeano: Peano;
@@ -436,12 +461,20 @@ pub type Rem<N, D> = <N as Div<D>>::Rem;
 impl<N: Integer, D: NonZero> Div<D> for N
 where
     // CmpZero<Prod<Signum<N>, Signum<D>>>:,
-    (): div_private::DivStart<Abs<N>, Abs<D>, Signum<N>, Prod<Signum<N>, Signum<D>>>,
+    (): div_private::DivStart<Abs<N>, Abs<D>, SignumOf<N>, ProdSig<SignumOf<N>, SignumOf<D>>>,
 {
-    type Quot =
-        <() as div_private::DivStart<Abs<N>, Abs<D>, Signum<N>, Prod<Signum<N>, Signum<D>>>>::Quot;
-    type Rem =
-        <() as div_private::DivStart<Abs<N>, Abs<D>, Signum<N>, Prod<Signum<N>, Signum<D>>>>::Rem;
+    type Quot = <() as div_private::DivStart<
+        Abs<N>,
+        Abs<D>,
+        SignumOf<N>,
+        ProdSig<SignumOf<N>, SignumOf<D>>,
+    >>::Quot;
+    type Rem = <() as div_private::DivStart<
+        Abs<N>,
+        Abs<D>,
+        SignumOf<N>,
+        ProdSig<SignumOf<N>, SignumOf<D>>,
+    >>::Rem;
 }
 
 mod div_private {
