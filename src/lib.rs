@@ -509,22 +509,18 @@ type SigDiv<A: Signum, B: Signum> = <A as Signum>::DivSignums<B>;
 type SigDivQuot<A: Signum, B: Signum, Q, R> = <SigDiv<A, B> as SignumPair>::Quot<Q, R>;
 type SigDivRem<A: Signum, B: Signum, Q, R, D> = <SigDiv<A, B> as SignumPair>::Rem<Q, R, D>;
 
-impl<N: Integer, D: NonZero> Div<D> for N
-where
-    // CmpZero<Prod<Signum<N>, Signum<D>>>:,
-    (): div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
-{
+impl<N: Integer, D: NonZero> Div<D> for N {
     type Quot = SigDivQuot<
         SignumOf<N>,
         SignumOf<D>,
-        <() as div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>>::Quot,
-        <() as div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>>::Rem,
+        <Length<Abs<N>> as div_private::DivLoopPeano>::StartQuot<Abs<N>, Abs<D>>,
+        <Length<Abs<N>> as div_private::DivLoopPeano>::StartRem<Abs<N>, Abs<D>>,
     >;
     type Rem = SigDivRem<
         SignumOf<N>,
         SignumOf<D>,
-        <() as div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>>::Quot,
-        <() as div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>>::Rem,
+        <Length<Abs<N>> as div_private::DivLoopPeano>::StartQuot<Abs<N>, Abs<D>>,
+        <Length<Abs<N>> as div_private::DivLoopPeano>::StartRem<Abs<N>, Abs<D>>,
         Abs<D>,
     >;
 }
@@ -544,11 +540,6 @@ mod div_private {
     //     R -= D
     //     Q[i] = 1
 
-    pub trait DivStartLoop<N, D, I> {
-        type Quot: Integer;
-        type Rem: Unsigned;
-    }
-
     pub trait DivLoop<N, D, Q, R, I> {
         type Quot: Integer;
         type Rem: Unsigned;
@@ -564,11 +555,18 @@ mod div_private {
     //
 
     pub trait DivLoopPeano {
+        type StartQuot<N: Unsigned, D: Unsigned>: Integer;
+        type StartRem<N: Unsigned, D: Unsigned>: Unsigned;
+
         type Quot<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering>: Integer;
         type Rem<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering>: Unsigned;
     }
 
     impl DivLoopPeano for PZ {
+        // this can only happen if you are dividing zero
+        type StartQuot<N: Unsigned, D: Unsigned> = consts::Z0;
+        type StartRem<N: Unsigned, D: Unsigned> = consts::Z0;
+
         type Quot<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
             O::QuotZ<N, D, Q, R>;
         type Rem<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
@@ -576,6 +574,11 @@ mod div_private {
     }
 
     impl<I: Peano> DivLoopPeano for PS<I> {
+        type StartQuot<N: Unsigned, D: Unsigned> =
+            <() as DivLoop<N, D, consts::Z0, consts::Z0, I>>::Quot;
+        type StartRem<N: Unsigned, D: Unsigned> =
+            <() as DivLoop<N, D, consts::Z0, consts::Z0, I>>::Rem;
+
         type Quot<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
             O::QuotPS<N, D, Q, R, I>;
         type Rem<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
@@ -620,16 +623,6 @@ mod div_private {
         type QuotZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> = BitSetP<Q, PZ, B1>;
         type RemZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> =
             ToUnsignedUnchecked<Diff<R, D>>;
-    }
-
-    impl<T, N: Integer, D, I: Peano> DivStartLoop<N, D, PS<I>> for T
-    where
-        // let Q = 0, R = 0
-        // for I in NBits-1..0:
-        T: DivLoop<N, D, consts::Z0, consts::Z0, I>,
-    {
-        type Quot = T::Quot;
-        type Rem = T::Rem;
     }
 
     impl<T, N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> DivLoop<N, D, Q, R, I> for T {
