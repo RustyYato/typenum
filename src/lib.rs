@@ -442,11 +442,11 @@ impl NonZero for IOnes {}
 impl<M: NonZero> NonZero for Int<M, B0> {}
 impl<M: Integer> NonZero for Int<M, B1> {}
 
-pub trait Negative: Integer<CompareZero = OrdLess> {}
-pub trait Positive: Integer<CompareZero = OrdGreater> + Unsigned {}
+pub trait Negative: Integer<CompareZero = OrdLess> + NonZero {}
+pub trait Positive: Integer<CompareZero = OrdGreater> + Unsigned + NonZero {}
 pub trait IsZero: Integer<CompareZero = OrdEq> + Unsigned {}
-impl<T: Integer<CompareZero = OrdLess>> Negative for T {}
-impl<T: Integer<CompareZero = OrdGreater> + Unsigned> Positive for T {}
+impl<T: Integer<CompareZero = OrdLess> + NonZero> Negative for T {}
+impl<T: Integer<CompareZero = OrdGreater> + Unsigned + NonZero> Positive for T {}
 impl<T: Integer<CompareZero = OrdEq> + Unsigned> IsZero for T {}
 
 type Cmp<A, B> = CmpZero<Diff<A, B>>;
