@@ -6,6 +6,8 @@ pub mod consts;
 #[cfg(test)]
 mod tests;
 
+pub mod array;
+
 pub struct IZeros;
 pub struct IOnes;
 pub struct B0;
@@ -61,6 +63,8 @@ impl Ordering for OrdGreater {
 }
 
 pub trait Bit: Seal {
+    const TO_BOOL: bool;
+
     const NEW: Self;
     // If then else, if the bit is true then T is returned else F is returned
     type Ite<T: Bit, F: Bit>: Bit;
@@ -74,10 +78,13 @@ pub trait Bit: Seal {
 
     type Not: Bit<Not = Self>;
     type CompareZero: Ordering;
+    type MaybeItem<T>;
 }
 
 impl Seal for B0 {}
 impl Bit for B0 {
+    const TO_BOOL: bool = false;
+
     const NEW: Self = Self;
     type Ite<T: Bit, F: Bit> = F;
     type PickInt<T: Integer, F: Integer> = F;
@@ -90,10 +97,13 @@ impl Bit for B0 {
 
     type Not = B1;
     type CompareZero = OrdEq;
+    type MaybeItem<T> = ();
 }
 
 impl Seal for B1 {}
 impl Bit for B1 {
+    const TO_BOOL: bool = true;
+
     const NEW: Self = Self;
     type Ite<T: Bit, F: Bit> = T;
     type PickInt<T: Integer, F: Integer> = T;
@@ -106,6 +116,7 @@ impl Bit for B1 {
 
     type Not = B0;
     type CompareZero = OrdGreater;
+    type MaybeItem<T> = T;
 }
 
 pub type BitAnd<A: Bit, B: Bit> = <A as Bit>::Ite<B, B0>;
@@ -431,17 +442,63 @@ pub type Length<A: Integer> = <A as Integer>::Length;
 
 pub type ProdSig<A: Signum, B: Signum> = <A as Signum>::MulSignum<B>;
 
+pub unsafe trait ArrayStore {
+    type Item;
+    type Length: Unsigned;
+}
+
+unsafe impl<T> ArrayStore for [T; 0] {
+    type Item = T;
+    type Length = IZeros;
+}
+
+#[repr(C)]
+pub struct IntArrayStore<M, T, B: Bit>(M, M, B::MaybeItem<T>);
+
+unsafe impl<M: ArrayStore, B: Bit> ArrayStore for IntArrayStore<M, M::Item, B> {
+    type Item = M::Item;
+    type Length = Int<M::Length, B>;
+}
+
 pub trait Unsigned: Integer {
+    const TO_BOOL: bool = match Self::TO_U8 {
+        0 => false,
+        1 => true,
+        _ => panic!("Invalid bool"),
+    };
+    const TO_U8: u8;
+    const TO_U16: u16;
+    const TO_U32: u32;
+    const TO_U64: u64;
+    const TO_U128: u128;
+    const TO_USIZE: usize;
+
     type AsPeano: Peano;
     type MostSigU: Unsigned;
     type Exp<N: Integer>: Integer;
+    type Array<T>: ArrayStore<Item = T, Length = Self>;
 }
 impl Unsigned for IZeros {
+    const TO_U8: u8 = 0;
+    const TO_U16: u16 = 0;
+    const TO_U32: u32 = 0;
+    const TO_U64: u64 = 0;
+    const TO_U128: u128 = 0;
+    const TO_USIZE: usize = 0;
+
     type AsPeano = PZ;
     type MostSigU = Self;
     type Exp<N: Integer> = consts::P1;
+    type Array<T> = [T; 0];
 }
 impl<M: Unsigned, L: Bit> Unsigned for Int<M, L> {
+    const TO_U8: u8 = 2 * M::TO_U8 + L::TO_BOOL as u8;
+    const TO_U16: u16 = 2 * M::TO_U16 + L::TO_BOOL as u16;
+    const TO_U32: u32 = 2 * M::TO_U32 + L::TO_BOOL as u32;
+    const TO_U64: u64 = 2 * M::TO_U64 + L::TO_BOOL as u64;
+    const TO_U128: u128 = 2 * M::TO_U128 + L::TO_BOOL as u128;
+    const TO_USIZE: usize = 2 * M::TO_USIZE + L::TO_BOOL as usize;
+
     type MostSigU = M;
 
     type AsPeano = L::AddPeano<<M::AsPeano as Peano>::Add<M::AsPeano>>;
@@ -449,6 +506,7 @@ impl<M: Unsigned, L: Bit> Unsigned for Int<M, L> {
     // N ^ (2 bm) * N ^ bl =
     // (N * N) ^ bm * N ^ bl =
     type Exp<N: Integer> = Prod<Pow<Prod<N, N>, M>, <L as Bit>::Pow<N>>;
+    type Array<T> = IntArrayStore<M::Array<T>, T, L>;
 }
 
 pub trait NonZero: Integer {}
