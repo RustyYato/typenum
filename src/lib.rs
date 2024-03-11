@@ -512,7 +512,6 @@ type SigDivRem<A: Signum, B: Signum, Q, R, D> = <SigDiv<A, B> as SignumPair>::Re
 impl<N: Integer, D: NonZero> Div<D> for N
 where
     // CmpZero<Prod<Signum<N>, Signum<D>>>:,
-    (): div_private::DivStart<Abs<N>, Abs<D>, SignumOf<N>, ProdSig<SignumOf<N>, SignumOf<D>>>,
     (): div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
 {
     type Quot = SigDivQuot<
@@ -528,19 +527,6 @@ where
         <() as div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>>::Rem,
         Abs<D>,
     >;
-
-    // type Quot = <() as div_private::DivStart<
-    //     Abs<N>,
-    //     Abs<D>,
-    //     SignumOf<N>,
-    //     ProdSig<SignumOf<N>, SignumOf<D>>,
-    // >>::Quot;
-    // type Rem = <() as div_private::DivStart<
-    //     Abs<N>,
-    //     Abs<D>,
-    //     SignumOf<N>,
-    //     ProdSig<SignumOf<N>, SignumOf<D>>,
-    // >>::Rem;
 }
 
 mod div_private {
@@ -558,11 +544,6 @@ mod div_private {
     //     R -= D
     //     Q[i] = 1
 
-    pub trait DivStart<N, D, NSign, Sign> {
-        type Quot: Integer;
-        type Rem: Unsigned;
-    }
-
     pub trait DivStartLoop<N, D, I> {
         type Quot: Integer;
         type Rem: Unsigned;
@@ -579,51 +560,6 @@ mod div_private {
     pub trait DivLoopIf<N, D, Q, R, I, Cmp> {
         type Quot: Integer;
         type Rem: Unsigned;
-    }
-
-    // Zero / D == Zero
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, IZeros, IZeros> for T {
-        type Quot = IZeros;
-        type Rem = IZeros;
-    }
-
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::P1, consts::P1> for T
-    where
-        // NBits = len(N)
-        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
-    {
-        type Quot = T::Quot;
-        type Rem = T::Rem;
-    }
-
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::P1, consts::N1> for T
-    where
-        // NBits = len(N)
-        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
-        Diff<D, T::Rem>: Unsigned,
-    {
-        type Quot = Neg<T::Quot>;
-        type Rem = T::Rem;
-    }
-
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::N1, consts::P1> for T
-    where
-        // NBits = len(N)
-        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
-        Diff<D, T::Rem>: Unsigned,
-    {
-        type Quot = <CmpZero<T::Rem> as Ordering>::PickInt<consts::Z0, T::Quot, Inc<T::Quot>>;
-        type Rem = <CmpZero<T::Rem> as Ordering>::PickUInt<consts::Z0, T::Rem, Diff<D, T::Rem>>;
-    }
-
-    impl<T, N: Integer, D: NonZero> DivStart<N, D, consts::N1, consts::N1> for T
-    where
-        // NBits = len(N)
-        T: DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
-        Diff<D, T::Rem>: Unsigned,
-    {
-        type Quot = <CmpZero<T::Rem> as Ordering>::PickInt<consts::Z0, Neg<T::Quot>, Not<T::Quot>>;
-        type Rem = <CmpZero<T::Rem> as Ordering>::PickUInt<consts::Z0, T::Rem, Diff<D, T::Rem>>;
     }
 
     impl<T, N: Integer, D, I: Peano> DivStartLoop<N, D, PS<I>> for T
