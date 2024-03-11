@@ -1,3 +1,4 @@
+#![no_std]
 #![allow(type_alias_bounds)]
 #![recursion_limit = "256"]
 
