@@ -31,4 +31,13 @@ const _: () = {
 
     let _: Quot<Z0, N5> = Z0;
     let _: Rem<Z0, N5> = Z0;
+
+    let _: Pow<N1, P2> = P1;
+    let _: Pow<N1, P3> = N1;
+
+    let _: Pow<N2, P3> = N8;
+    let _: Pow<N4, P3> = N64;
+    let _: Pow<N4, P2> = P16;
+    let _: Pow<P4, P2> = P16;
+    let _: Pow<P2, P3> = P8;
 };

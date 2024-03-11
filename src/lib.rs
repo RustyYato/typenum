@@ -69,6 +69,7 @@ pub trait Bit: Seal {
     type MaybeInc<A: Integer>: Integer;
     type MaybeDec<A: Integer>: Integer;
     type Mul<A: Integer>: Integer;
+    type Pow<A: Integer>: Integer;
     type AddPeano<P: Peano>: Peano;
 
     type Not: Bit<Not = Self>;
@@ -84,6 +85,7 @@ impl Bit for B0 {
     type MaybeInc<A: Integer> = A;
     type MaybeDec<A: Integer> = A::Dec;
     type Mul<A: Integer> = IZeros;
+    type Pow<A: Integer> = consts::P1;
     type AddPeano<P: Peano> = P;
 
     type Not = B1;
@@ -99,6 +101,7 @@ impl Bit for B1 {
     type MaybeInc<A: Integer> = A::Inc;
     type MaybeDec<A: Integer> = A;
     type Mul<A: Integer> = A;
+    type Pow<A: Integer> = A;
     type AddPeano<P: Peano> = PS<P>;
 
     type Not = B0;
@@ -183,6 +186,7 @@ pub trait Integer: Seal {
     type Add<B: Integer>: Integer;
     type AddCarry<B: Integer, C: Bit>: Integer;
     type Mul<B: Integer>: Integer;
+    type Pow<B: Unsigned>: Integer;
     type Neg: Integer;
     type Abs: Unsigned;
     type And<B: Integer>: Integer<
@@ -240,6 +244,7 @@ impl Integer for IZeros {
     type Add<B: Integer> = B;
     type AddCarry<B: Integer, C: Bit> = C::MaybeInc<B>;
     type Mul<B: Integer> = IZeros;
+    type Pow<B: Unsigned> = IZeros;
     type Neg = IZeros;
     type Abs = IZeros;
 
@@ -274,6 +279,7 @@ impl Integer for IOnes {
     type Add<B: Integer> = B::Dec;
     type AddCarry<B: Integer, C: Bit> = C::MaybeDec<B>;
     type Mul<B: Integer> = B::Neg;
+    type Pow<B: Unsigned> = Sum<consts::P1, Prod<consts::P2, Neg<Int<IZeros, B::LeastSig>>>>;
     type Neg = Int<IZeros, B1>;
     type Abs = Int<IZeros, B1>;
 
@@ -325,6 +331,7 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
         Sum<Sum<BitProd<B::LeastSig, M>, BitProd<L, B::MostSig>>, PushBit<Prod<M, B::MostSig>, B0>>,
         BitAnd<L, B::LeastSig>,
     >;
+    type Pow<B: Unsigned> = B::Exp<Self>;
     type Neg = <Self::Not as Integer>::Inc;
 
     // this ToUnsignedUnchecked is a no-op, but I can't remove it because Rust's type system is
@@ -416,6 +423,7 @@ pub type ToUnsignedUnchecked<A: Integer> = <A as Integer>::ToUnsignedUnchecked;
 pub type Inc<A: Integer> = <A as Integer>::Inc;
 pub type Dec<A: Integer> = <A as Integer>::Dec;
 pub type Prod<A: Integer, B: Integer> = <A as Integer>::Mul<B>;
+pub type Pow<A: Integer, B: Unsigned> = <A as Integer>::Pow<B>;
 pub type Sq<A: Integer> = <A as Integer>::Mul<A>;
 pub type Neg<A: Integer> = <A as Integer>::Neg;
 pub type Abs<A: Integer> = <A as Integer>::Abs;
@@ -426,15 +434,21 @@ pub type ProdSig<A: Signum, B: Signum> = <A as Signum>::MulSignum<B>;
 pub trait Unsigned: Integer {
     type AsPeano: Peano;
     type MostSigU: Unsigned;
+    type Exp<N: Integer>: Integer;
 }
 impl Unsigned for IZeros {
     type AsPeano = PZ;
     type MostSigU = Self;
+    type Exp<N: Integer> = consts::P1;
 }
 impl<M: Unsigned, L: Bit> Unsigned for Int<M, L> {
     type MostSigU = M;
 
     type AsPeano = L::AddPeano<<M::AsPeano as Peano>::Add<M::AsPeano>>;
+    // N ^ (2 bm + bl) =
+    // N ^ (2 bm) * N ^ bl =
+    // (N * N) ^ bm * N ^ bl =
+    type Exp<N: Integer> = Prod<Pow<Prod<N, N>, M>, <L as Bit>::Pow<N>>;
 }
 
 pub trait NonZero: Integer {}
