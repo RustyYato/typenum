@@ -162,10 +162,9 @@ impl<P: Peano> Peano for PS<P> {
 pub trait Signum: Integer {
     type Negate: Signum;
     type MulSignum<N: Signum>: Signum;
-    type DivSignums<N: SignumPairHalf>: SignumPair;
+    type DivSignums<N: Signum>: SignumPair;
 }
 
-pub trait SignumPairHalf: Signum {}
 pub trait SignumPair: Seal {
     type Quot<Q: Integer, R: Unsigned>: Integer;
     type Rem<Q: Integer, R: Unsigned, D: Unsigned>: Unsigned;
@@ -352,19 +351,19 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
 impl Signum for consts::N1 {
     type Negate = consts::P1;
     type MulSignum<N: Signum> = N::Negate;
-    type DivSignums<N: SignumPairHalf> = (Self, N);
+    type DivSignums<N: Signum> = (Self, Self::MulSignum<N>);
 }
 
 impl Signum for consts::Z0 {
     type Negate = consts::Z0;
     type MulSignum<N: Signum> = consts::Z0;
-    type DivSignums<N: SignumPairHalf> = (consts::Z0, consts::Z0);
+    type DivSignums<N: Signum> = (consts::Z0, consts::Z0);
 }
 
 impl Signum for consts::P1 {
     type Negate = consts::N1;
     type MulSignum<N: Signum> = N;
-    type DivSignums<N: SignumPairHalf> = (Self, N);
+    type DivSignums<N: Signum> = (Self, Self::MulSignum<N>);
 }
 
 impl Seal for (consts::Z0, consts::Z0) {}
@@ -373,21 +372,18 @@ impl SignumPair for (consts::Z0, consts::Z0) {
     type Rem<Q: Integer, R: Unsigned, D: Unsigned> = consts::Z0;
 }
 
-impl<S: SignumPairHalf> Seal for (consts::P1, S) {}
-impl<S: SignumPairHalf> SignumPair for (consts::P1, S) {
+impl<S: Signum> Seal for (consts::P1, S) {}
+impl<S: Signum> SignumPair for (consts::P1, S) {
     type Quot<Q: Integer, R: Unsigned> = Prod<Q, S>;
     type Rem<Q: Integer, R: Unsigned, D: Unsigned> = R;
 }
 
-impl<S: SignumPairHalf> Seal for (consts::N1, S) {}
-impl<S: SignumPairHalf> SignumPair for (consts::N1, S) {
-    type Quot<Q: Integer, R: Unsigned> = consts::Z0;
+impl<S: Signum> Seal for (consts::N1, S) {}
+impl<S: Signum> SignumPair for (consts::N1, S) {
+    type Quot<Q: Integer, R: Unsigned> = Prod<Sum<Q, SignumOf<R>>, S>;
     type Rem<Q: Integer, R: Unsigned, D: Unsigned> =
         <CmpZero<R> as Ordering>::PickUInt<consts::Z0, R, UDiff<D, R>>;
 }
-
-impl SignumPairHalf for consts::P1 {}
-impl SignumPairHalf for consts::N1 {}
 
 // type AtLeastTwoBitsSet<A, B, C> = Or<Or<And<A, B>, And<A, C>>, And<B, C>>;
 // (A & B) | (A & C) | (B & C)
@@ -540,12 +536,19 @@ where
     (): div_private::DivStart<Abs<N>, Abs<D>, SignumOf<N>, ProdSig<SignumOf<N>, SignumOf<D>>>,
     (): div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>,
 {
-    type Quot = <() as div_private::DivStart<
-        Abs<N>,
-        Abs<D>,
+    type Quot = SigDivQuot<
         SignumOf<N>,
-        ProdSig<SignumOf<N>, SignumOf<D>>,
-    >>::Quot;
+        SignumOf<D>,
+        <() as div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>>::Quot,
+        <() as div_private::DivStartLoop<Abs<N>, Abs<D>, Length<Abs<N>>>>::Rem,
+    >;
+
+    // type Quot = <() as div_private::DivStart<
+    //     Abs<N>,
+    //     Abs<D>,
+    //     SignumOf<N>,
+    //     ProdSig<SignumOf<N>, SignumOf<D>>,
+    // >>::Quot;
     type Rem = <() as div_private::DivStart<
         Abs<N>,
         Abs<D>,
