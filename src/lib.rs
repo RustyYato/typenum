@@ -23,7 +23,7 @@ mod seal {
     pub trait Seal {}
 }
 
-pub trait Ordering: Seal {
+pub trait Ordering: Seal + div_private::DivLoopOrd {
     type Then<O: Ordering>: Ordering;
     type Reverse: Ordering<Reverse = Self>;
     type PickInt<L: Integer, E: Integer, G: Integer>: Integer;
@@ -114,7 +114,7 @@ pub type BitNor<A: Bit, B: Bit> = BitNot<BitOr<A, B>>;
 pub type BitNxor<A: Bit, B: Bit> = BitNot<BitXor<A, B>>;
 pub type BitProd<A: Bit, B: Integer> = <A as Bit>::Mul<B>;
 
-pub trait Peano: Seal + Sized {
+pub trait Peano: Seal + Sized + div_private::DivLoopPeano {
     type Add<B: Peano>: Peano;
     type Mul<B: Peano>: Peano;
     type Div2: Peano;
@@ -557,9 +557,69 @@ mod div_private {
         type Quot: Integer;
         type Rem: Unsigned;
     }
-    pub trait DivLoopIf<N, D, Q, R, I, Cmp> {
-        type Quot: Integer;
-        type Rem: Unsigned;
+    // pub trait DivLoopIf<N, D, Q, R, I, Cmp> {
+    //     type Quot: Integer;
+    //     type Rem: Unsigned;
+    // }
+    //
+
+    pub trait DivLoopPeano {
+        type Quot<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering>: Integer;
+        type Rem<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering>: Unsigned;
+    }
+
+    impl DivLoopPeano for PZ {
+        type Quot<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
+            O::QuotZ<N, D, Q, R>;
+        type Rem<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
+            O::RemZ<N, D, Q, R>;
+    }
+
+    impl<I: Peano> DivLoopPeano for PS<I> {
+        type Quot<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
+            O::QuotPS<N, D, Q, R, I>;
+        type Rem<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, O: Ordering> =
+            O::RemPS<N, D, Q, R, I>;
+    }
+
+    pub trait DivLoopOrd {
+        type QuotPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano>: Integer;
+        type RemPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano>: Unsigned;
+
+        type QuotZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned>: Integer;
+        type RemZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned>: Unsigned;
+    }
+
+    impl DivLoopOrd for OrdLess {
+        type QuotPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> =
+            <() as DivLoop<N, D, Q, R, I>>::Quot;
+        type RemPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> =
+            <() as DivLoop<N, D, Q, R, I>>::Rem;
+
+        type QuotZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> = Q;
+        type RemZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> = R;
+    }
+
+    impl DivLoopOrd for OrdEq {
+        type QuotPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> =
+            <() as DivLoop<N, D, BitSetP<Q, PS<I>, B1>, ToUnsignedUnchecked<Diff<R, D>>, I>>::Quot;
+        type RemPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> =
+            <() as DivLoop<N, D, BitSetP<Q, PS<I>, B1>, ToUnsignedUnchecked<Diff<R, D>>, I>>::Rem;
+
+        type QuotZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> = BitSetP<Q, PZ, B1>;
+        type RemZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> =
+            ToUnsignedUnchecked<Diff<R, D>>;
+    }
+
+    impl DivLoopOrd for OrdGreater {
+        type QuotPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> =
+            <() as DivLoop<N, D, BitSetP<Q, PS<I>, B1>, ToUnsignedUnchecked<Diff<R, D>>, I>>::Quot;
+        type RemPS<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> =
+            <() as DivLoop<N, D, BitSetP<Q, PS<I>, B1>, ToUnsignedUnchecked<Diff<R, D>>, I>>::Rem;
+
+        type QuotZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> = BitSetP<Q, PZ, B1>;
+        type RemZ<N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned> =
+            ToUnsignedUnchecked<Diff<R, D>>;
     }
 
     impl<T, N: Integer, D, I: Peano> DivStartLoop<N, D, PS<I>> for T
@@ -572,56 +632,27 @@ mod div_private {
         type Rem = T::Rem;
     }
 
-    impl<T, N: Integer, D, Q, R: Integer, I: Peano> DivLoop<N, D, Q, R, I> for T
-    where
-        //   R <<=1
-        //   R[0] = N[i]
-        T: DivLoopCmp<N, D, Q, BitSet<Shl<R, consts::P1>, consts::Z0, BitGetP<N, I>>, I>,
-    {
-        type Quot = T::Quot;
-        type Rem = T::Rem;
+    impl<T, N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> DivLoop<N, D, Q, R, I> for T {
+        type Quot = <() as DivLoopCmp<
+            N,
+            D,
+            Q,
+            ToUnsignedUnchecked<BitSet<Shl<R, consts::P1>, consts::Z0, BitGetP<N, I>>>,
+            I,
+        >>::Quot;
+        type Rem = <() as DivLoopCmp<
+            N,
+            D,
+            Q,
+            ToUnsignedUnchecked<BitSet<Shl<R, consts::P1>, consts::Z0, BitGetP<N, I>>>,
+            I,
+        >>::Rem;
     }
 
-    impl<T, N, D: Integer, Q, R: Integer, I> DivLoopCmp<N, D, Q, R, I> for T
-    where
-        //   let C = R.cmp(D)
-        T: DivLoopIf<N, D, Q, R, I, Cmp<R, D>>,
+    impl<T, N: Unsigned, D: Unsigned, Q: Integer, R: Unsigned, I: Peano> DivLoopCmp<N, D, Q, R, I>
+        for T
     {
-        type Quot = T::Quot;
-        type Rem = T::Rem;
-    }
-
-    impl<T, N, D: Integer, Q: Integer, R: Integer, I: Peano, O: cmp::OrdGe>
-        DivLoopIf<N, D, Q, R, PS<I>, O> for T
-    where
-        //     R -= D
-        //     Q[i] = 1
-        T: DivLoop<N, D, BitSetP<Q, PS<I>, B1>, Diff<R, D>, I>,
-    {
-        type Quot = T::Quot;
-        type Rem = T::Rem;
-    }
-
-    impl<T, N, D, Q: Integer, R: Integer, I: Peano> DivLoopIf<N, D, Q, R, PS<I>, OrdLess> for T
-    where
-        T: DivLoop<N, D, Q, R, I>,
-    {
-        type Quot = T::Quot;
-        type Rem = T::Rem;
-    }
-
-    //     R -= D
-    //     Q[i] = 1
-    impl<T, N, D: Integer, Q: Integer, R: Integer, O: cmp::OrdGe> DivLoopIf<N, D, Q, R, PZ, O> for T
-    where
-        Diff<R, D>: Unsigned,
-    {
-        type Quot = BitSetP<Q, PZ, B1>;
-        type Rem = Diff<R, D>;
-    }
-
-    impl<T, N, D, Q: Integer, R: Unsigned> DivLoopIf<N, D, Q, R, PZ, OrdLess> for T {
-        type Quot = Q;
-        type Rem = R;
+        type Quot = <I as DivLoopPeano>::Quot<N, D, Q, R, Cmp<R, D>>;
+        type Rem = <I as DivLoopPeano>::Rem<N, D, Q, R, Cmp<R, D>>;
     }
 }
