@@ -9,16 +9,23 @@ mod tests;
 
 pub mod array;
 
+#[derive(Clone, Copy)]
 pub struct IZeros;
+#[derive(Clone, Copy)]
 pub struct IOnes;
+#[derive(Clone, Copy)]
 pub struct B0;
+#[derive(Clone, Copy)]
 pub struct B1;
+#[derive(Clone, Copy)]
 pub struct Int<M, L> {
     _most_significant_bits: M,
     _least_significant_bit: L,
 }
 
+#[derive(Clone, Copy)]
 pub struct PZ;
+#[derive(Clone, Copy)]
 pub struct PS<P>(P);
 
 use seal::Seal;
@@ -34,8 +41,11 @@ pub trait Ordering: Seal + div_private::DivLoopOrd {
     type ToSignum: Signum;
 }
 
+#[derive(Clone, Copy)]
 pub struct OrdLess;
+#[derive(Clone, Copy)]
 pub struct OrdEq;
+#[derive(Clone, Copy)]
 pub struct OrdGreater;
 
 impl Seal for OrdLess {}
@@ -454,6 +464,7 @@ unsafe impl<T> ArrayStore for [T; 0] {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct IntArrayStore<M, T, B: Bit>(M, M, B::MaybeItem<T>);
 
 unsafe impl<M: ArrayStore, B: Bit> ArrayStore for IntArrayStore<M, M::Item, B> {

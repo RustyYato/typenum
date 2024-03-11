@@ -208,7 +208,7 @@ impl<T: Hash, N: Unsigned> Hash for Array<T, N> {
     }
 }
 
-// impl<T: Copy, N: Unsigned> Copy for Array<T, N> {}
+impl<T: Copy, N: Unsigned> Copy for Array<T, N> where N::Array<T>: Copy {}
 impl<T: Clone, N: Unsigned> Clone for Array<T, N> {
     fn clone(&self) -> Self {
         let mut v = SimpleArrayVec::<T, N>::new();
