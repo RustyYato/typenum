@@ -72,7 +72,6 @@ pub trait Bit: Seal {
     type AddPeano<P: Peano>: Peano;
 
     type Not: Bit<Not = Self>;
-
     type CompareZero: Ordering;
 }
 
@@ -186,7 +185,7 @@ pub trait Integer: Seal {
     type AddCarry<B: Integer, C: Bit>: Integer;
     type Mul<B: Integer>: Integer;
     type Neg: Integer;
-    type Abs: Integer;
+    type Abs: Unsigned;
     type And<B: Integer>: Integer<
         LeastSig = BitAnd<Self::LeastSig, B::LeastSig>,
         MostSig = And<Self::MostSig, B::MostSig>,
@@ -215,6 +214,7 @@ pub trait Integer: Seal {
         Not = Self,
         LeastSig = BitNot<Self::LeastSig>,
         MostSig = <Self::MostSig as Integer>::Not,
+        IsNeg = BitNot<Self::IsNeg>,
     >;
     type ShrOne: Integer<LeastSig = <Self::MostSig as Integer>::LeastSig>;
 
@@ -222,6 +222,8 @@ pub trait Integer: Seal {
     type BitSet<P: Peano, B: Bit>: Integer;
 
     type CompareZero: Ordering;
+    type IsNeg: Bit;
+    type ToUnsignedUnchecked: Unsigned;
 }
 
 impl Seal for IZeros {}
@@ -254,6 +256,8 @@ impl Integer for IZeros {
     type BitSet<P: Peano, B: Bit> = P::BitSet<Self, B0, B>;
 
     type CompareZero = OrdEq;
+    type IsNeg = B0;
+    type ToUnsignedUnchecked = Self;
 }
 
 impl Seal for IOnes {}
@@ -286,6 +290,8 @@ impl Integer for IOnes {
     type BitSet<P: Peano, B: Bit> = P::BitSet<Self, B1, B>;
 
     type CompareZero = OrdLess;
+    type IsNeg = B1;
+    type ToUnsignedUnchecked = IZeros;
 }
 
 impl<M: Integer, L: Bit> Seal for Int<M, L> {}
@@ -321,7 +327,11 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
         BitAnd<L, B::LeastSig>,
     >;
     type Neg = <Self::Not as Integer>::Inc;
-    type Abs = <Self::CompareZero as Ordering>::PickInt<Self::Neg, IZeros, Self>;
+
+    // this ToUnsignedUnchecked is a no-op, but I can't remove it because Rust's type system is
+    // too weak to figure this out
+    type Abs =
+        ToUnsignedUnchecked<<Self::CompareZero as Ordering>::PickInt<Self::Neg, IZeros, Self>>;
 
     type And<B: Integer> = PushBit<And<M, B::MostSig>, BitAnd<L, B::LeastSig>>;
     type Or<B: Integer> = PushBit<Or<M, B::MostSig>, BitOr<L, B::LeastSig>>;
@@ -335,6 +345,8 @@ impl<M: Integer, L: Bit> Integer for Int<M, L> {
     type BitSet<P: Peano, B: Bit> = P::BitSet<M, L, B>;
 
     type CompareZero = <M::CompareZero as Ordering>::Then<L::CompareZero>;
+    type IsNeg = M::IsNeg;
+    type ToUnsignedUnchecked = Int<M::ToUnsignedUnchecked, L>;
 }
 
 impl Signum for consts::N1 {
@@ -403,6 +415,7 @@ pub type SignumOf<A: Integer> = <<A as Integer>::CompareZero as Ordering>::ToSig
 pub type Sum<A: Integer, B: Integer> = <A as Integer>::Add<B>;
 pub type Diff<A: Integer, B: Integer> = <A as Integer>::Add<B::Neg>;
 
+pub type ToUnsignedUnchecked<A: Integer> = <A as Integer>::ToUnsignedUnchecked;
 pub type UDiff<A: Unsigned, B: Unsigned> = <A as Unsigned>::SatSub<B>;
 pub type UDiffCarry<A: Unsigned, B: Unsigned, C: Bit> = <A as Unsigned>::SatSubCarry<B, C>;
 
@@ -516,6 +529,10 @@ pub trait Div<D: NonZero> {
 
 pub type Quot<N, D> = <N as Div<D>>::Quot;
 pub type Rem<N, D> = <N as Div<D>>::Rem;
+
+type SigDiv<A: Signum, B: Signum> = <A as Signum>::DivSignums<B>;
+type SigDivQuot<A: Signum, B: Signum, Q, R> = <SigDiv<A, B> as SignumPair>::Quot<Q, R>;
+type SigDivRem<A: Signum, B: Signum, Q, R, D> = <SigDiv<A, B> as SignumPair>::Rem<Q, R, D>;
 
 impl<N: Integer, D: NonZero> Div<D> for N
 where
