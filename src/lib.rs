@@ -548,11 +548,6 @@ mod div_private {
         type Quot: Integer;
         type Rem: Unsigned;
     }
-    // pub trait DivLoopIf<N, D, Q, R, I, Cmp> {
-    //     type Quot: Integer;
-    //     type Rem: Unsigned;
-    // }
-    //
 
     pub trait DivLoopPeano {
         type StartQuot<N: Unsigned, D: Unsigned>: Integer;
