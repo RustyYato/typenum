@@ -25,4 +25,10 @@ const _: () = {
 
     let _: Quot<N32, N5> = P7;
     let _: Rem<N32, N5> = P3;
+
+    let _: Quot<Z0, P5> = Z0;
+    let _: Rem<Z0, P5> = Z0;
+
+    let _: Quot<Z0, N5> = Z0;
+    let _: Rem<Z0, N5> = Z0;
 };
